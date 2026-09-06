@@ -641,28 +641,24 @@ NODES.forEach(function(node){
 var meshById = {};
 meshes.forEach(function(m){ meshById[m.userData.id] = m; });
 
-// ---------- IMMAGINI REALI: database personale + archivi pubblici ----------
+// ---------- IMMAGINI REALI: database personale + archivio pubblico ----------
 // Le immagini partono come placeholder generati (come prima) e vengono sostituite, una per
-// una, non appena arrivano i dati reali. Tre fonti, in ordine di priorità:
+// una, non appena arrivano i dati reali. Due fonti, in ordine di priorità:
 //   1) il TUO database personale — un file data/images.json dentro il repository: ogni voce
 //      lì dentro riempie uno slot con precedenza assoluta (vedi il file per il formato).
 //      Aggiungere un'immagine = aggiungere una voce a quel file, niente altro.
-//   2) gli slot ancora liberi vengono riempiti da Openverse (aggrega immagini con licenza
-//      Creative Commons da tante fonti diverse — Flickr, archivi indipendenti, musei — quindi
-//      è la fonte più varia/sperimentale delle due). Nessuna chiave richiesta: le richieste
-//      partono anonime, dal browser di ogni visitatore, esattamente come le altre due fonti.
-//   3) quel che resta ancora libero viene riempito da Wikimedia Commons (API pubblica, nessuna
-//      chiave richiesta, CORS abilitato sia sull'API sia sui file — a differenza dell'Art
-//      Institute of Chicago, provato in un primo momento, la cui API immagini si è rivelata
-//      inaffidabile per un blocco CORS lato loro). Fa da "rete di sicurezza": se Openverse
-//      restituisce meno immagini del previsto (o fallisce del tutto), Wikimedia copre il resto.
+//   2) gli slot rimasti liberi vengono riempiti automaticamente da Wikimedia Commons (API
+//      pubblica, nessuna chiave richiesta, CORS abilitato sia sull'API sia sui file).
+//      NOTA: qui c'era anche Openverse come terza fonte, per varietà. È stata tolta perché,
+//      testandola dal vivo, la sua API risponde 401 (non autorizzata) anche per una semplice
+//      ricerca anonima — richiede quindi una chiave che andrebbe esposta nel codice pubblico
+//      del sito, cosa sconsigliata per un sito statico senza server dietro. Stessa lezione
+//      già imparata con l'Art Institute of Chicago: se un'API esterna non si comporta come
+//      documentato, si toglie e si resta sulle fonti verificate.
 // Se una richiesta fallisce (file assente, rete assente, API irraggiungibile) il sito resta
 // perfettamente funzionante con i placeholder, esattamente come prima: nessun punto di rottura.
 var IMAGE_NODES = NODES.filter(function(n){ return n.type === "image"; });
 var WIKIMEDIA_CATEGORY = "Category:Paintings in the Metropolitan Museum of Art";
-var OPENVERSE_QUERY = "contemporary art";
-var OPENVERSE_LICENSES = "cc0,pdm"; // solo licenze che non richiedono attribuzione
-var OPENVERSE_CATEGORIES = "digitized_artwork,illustration,photograph";
 var LOCAL_DATABASE_URL = "data/images.json";
 
 function stripHtml(html){
@@ -682,79 +678,60 @@ function fetchLocalDatabase(){
     .catch(function(){ return []; });
 }
 
-// 2) Openverse: aggrega immagini riutilizzabili da tante fonti diverse. Per la texture
-// WebGL usiamo il campo "thumbnail" (proxato dai server di Openverse, pensato apposta per
-// essere riusato altrove) invece di "url" (il file originale, che vive su un sito terzo
-// qualsiasi e potrebbe non avere le stesse garanzie CORS). "url" resta comunque perfetto per
-// il link di download nel pannello, dove il CORS non è richiesto.
-function fetchOpenverseArtworks(target){
-  if(target <= 0) return Promise.resolve([]);
-  var url = "https://api.openverse.org/v1/images/"
-    + "?q=" + encodeURIComponent(OPENVERSE_QUERY)
-    + "&license=" + OPENVERSE_LICENSES
-    + "&category=" + OPENVERSE_CATEGORIES
-    + "&mature=false"
-    + "&page_size=" + Math.min(target, 60);
-
-  return fetch(url)
-    .then(function(res){ return res.ok ? res.json() : null; })
-    .then(function(json){
-      if(!json || !Array.isArray(json.results)) return [];
-      return json.results
-        .filter(function(r){ return r && r.thumbnail; })
-        .map(function(r){
-          return {
-            id: "OV-" + r.id,
-            title: r.title || "Senza titolo",
-            artist: r.creator || "",
-            date: "",
-            medium: r.category ? r.category.replace(/_/g, " ") : "",
-            thumbUrl: r.thumbnail,
-            fullUrl: r.url || r.thumbnail,
-            source: "Openverse" + (r.source ? " (" + r.source + ")" : "")
-          };
-        })
-        .slice(0, target);
-    })
-    .catch(function(){ return []; });
-}
-
-// 3) Archivio pubblico (Wikimedia Commons), usato solo per gli slot che il database
-// personale e Openverse non coprono.
+// 2) Archivio pubblico (Wikimedia Commons), usato solo per gli slot che il database
+// personale non copre. Senza autenticazione, l'API di Wikimedia restituisce al massimo 50
+// risultati per richiesta, indipendentemente da quanti "gcmlimit" gliene chiediamo — quindi,
+// se servono più di 50 immagini, bisogna richiamarla più volte usando il token "gcmcontinue"
+// che restituisce lei stessa, finché non abbiamo abbastanza opere o la categoria finisce.
 function fetchArchiveArtworks(target){
   if(target <= 0) return Promise.resolve([]);
-  var url = "https://commons.wikimedia.org/w/api.php"
-    + "?action=query&format=json&origin=*"
-    + "&generator=categorymembers&gcmtitle=" + encodeURIComponent(WIKIMEDIA_CATEGORY)
-    + "&gcmnamespace=6&gcmtype=file&gcmlimit=" + Math.min(target, 200)
-    + "&prop=imageinfo&iiprop=" + encodeURIComponent("url|extmetadata|size") + "&iiurlwidth=400";
+  var collected = [];
+  var MAX_BATCHES = 8; // margine di sicurezza: fino a ~400 opere, ben oltre i 200 tasselli massimi
 
-  return fetch(url)
-    .then(function(res){ return res.ok ? res.json() : null; })
-    .then(function(json){
-      if(!json || !json.query || !json.query.pages) return [];
-      var pages = Object.keys(json.query.pages).map(function(k){ return json.query.pages[k]; });
-      return pages
-        .filter(function(pg){ return pg.imageinfo && pg.imageinfo[0] && pg.imageinfo[0].thumburl; })
-        .map(function(pg){
-          var info = pg.imageinfo[0];
-          var meta = info.extmetadata || {};
-          var objectName = meta.ObjectName ? stripHtml(meta.ObjectName.value) : "";
-          var filenameTitle = pg.title.replace(/^File:/, "").replace(/\.[a-zA-Z0-9]+$/, "").replace(/_/g, " ");
-          return {
-            id: "WC-" + pg.pageid,
-            title: objectName || filenameTitle,
-            artist: meta.Artist ? stripHtml(meta.Artist.value) : "",
-            date: meta.DateTimeOriginal ? stripHtml(meta.DateTimeOriginal.value) : (meta.DateTime ? stripHtml(meta.DateTime.value) : ""),
-            medium: meta.Medium ? stripHtml(meta.Medium.value) : "",
-            thumbUrl: info.thumburl,
-            fullUrl: info.url,
-            source: "Wikimedia Commons"
-          };
-        })
-        .slice(0, target);
-    })
-    .catch(function(){ return []; });
+  function mapPage(pg){
+    var info = pg.imageinfo[0];
+    var meta = info.extmetadata || {};
+    var objectName = meta.ObjectName ? stripHtml(meta.ObjectName.value) : "";
+    var filenameTitle = pg.title.replace(/^File:/, "").replace(/\.[a-zA-Z0-9]+$/, "").replace(/_/g, " ");
+    return {
+      id: "WC-" + pg.pageid,
+      title: objectName || filenameTitle,
+      artist: meta.Artist ? stripHtml(meta.Artist.value) : "",
+      date: meta.DateTimeOriginal ? stripHtml(meta.DateTimeOriginal.value) : (meta.DateTime ? stripHtml(meta.DateTime.value) : ""),
+      medium: meta.Medium ? stripHtml(meta.Medium.value) : "",
+      thumbUrl: info.thumburl,
+      fullUrl: info.url,
+      source: "Wikimedia Commons"
+    };
+  }
+
+  function fetchBatch(gcmcontinue, batchesLeft){
+    var url = "https://commons.wikimedia.org/w/api.php"
+      + "?action=query&format=json&origin=*"
+      + "&generator=categorymembers&gcmtitle=" + encodeURIComponent(WIKIMEDIA_CATEGORY)
+      + "&gcmnamespace=6&gcmtype=file&gcmlimit=50"
+      + "&prop=imageinfo&iiprop=" + encodeURIComponent("url|extmetadata|size") + "&iiurlwidth=400"
+      + (gcmcontinue ? "&gcmcontinue=" + encodeURIComponent(gcmcontinue) : "");
+
+    return fetch(url)
+      .then(function(res){ return res.ok ? res.json() : null; })
+      .then(function(json){
+        if(!json || !json.query || !json.query.pages) return;
+        var pages = Object.keys(json.query.pages).map(function(k){ return json.query.pages[k]; });
+        var batch = pages
+          .filter(function(pg){ return pg.imageinfo && pg.imageinfo[0] && pg.imageinfo[0].thumburl; })
+          .map(mapPage);
+        collected = collected.concat(batch);
+
+        var nextContinue = json.continue && json.continue.gcmcontinue;
+        if(collected.length < target && nextContinue && batchesLeft > 1){
+          return fetchBatch(nextContinue, batchesLeft - 1);
+        }
+      })
+      .catch(function(){ /* teniamo quello che si è già raccolto finora, nessun crash */ });
+  }
+
+  return fetchBatch(null, MAX_BATCHES).then(function(){ return collected.slice(0, target); }).catch(function(){ return collected.slice(0, target); });
 }
 
 var archiveTextureLoader = new THREE.TextureLoader();
@@ -780,20 +757,52 @@ function applyCoverFit(tex){
 
 // Assegna un'opera (dal database personale o dall'archivio) al prossimo nodo-immagine libero,
 // carica la texture reale sopra al placeholder e aggiorna il pannello se è già aperto su di esso.
-function assignArtworkToNode(node, artwork){
+// onSettled (opzionale) viene chiamato sia in caso di successo che di errore, ed è quello che
+// permette alla coda qui sotto di sapere quando può far partire il prossimo caricamento.
+function assignArtworkToNode(node, artwork, onSettled){
   node.archive = artwork;
   node.imageUrlSmall = artwork.thumbUrl;
   node.imageUrlLarge = artwork.fullUrl;
   var mesh = meshById[node.id];
-  if(!mesh) return;
+  if(!mesh){ if(onSettled) onSettled(); return; }
   archiveTextureLoader.load(node.imageUrlSmall, function(tex){
     applyCoverFit(tex);
     mesh.material.map = tex;
     mesh.material.needsUpdate = true;
     if(typeof currentDetailNode !== 'undefined' && currentDetailNode === node){ openDetail(node); }
+    if(onSettled) onSettled();
   }, undefined, function(){
-    // errore di rete sulla singola immagine: resta il placeholder già assegnato, nessun crash
+    // errore di rete sulla singola immagine: resta il placeholder già assegnato, nessun crash.
+    // Segnaliamo comunque in console quale URL non è arrivato, utile per capire il perché
+    // (apri F12 → Console nel browser per vederli).
+    console.warn('[Iperuranio] immagine non caricata (' + artwork.source + '): ' + node.imageUrlSmall);
+    if(onSettled) onSettled();
   });
+}
+
+// Coda di caricamento: scaricare 150-200 immagini reali tutte insieme, appena arrivano i dati,
+// fa scattare il limite "troppe richieste" (429) dei server di Wikimedia — che ragionevolmente
+// trattano una raffica del genere come un abuso. Qui le mettiamo in fila e ne teniamo al
+// massimo poche attive contemporaneamente, lasciando partire la successiva solo quando una
+// finisce (o fallisce): stesso risultato finale, ma a un ritmo che i server tollerano.
+var ARCHIVE_LOAD_CONCURRENCY = 6;
+var archiveLoadQueue = [];
+var archiveLoadsActive = 0;
+
+function enqueueArtworkLoad(node, artwork){
+  archiveLoadQueue.push({ node: node, artwork: artwork });
+  processArchiveLoadQueue();
+}
+
+function processArchiveLoadQueue(){
+  while(archiveLoadsActive < ARCHIVE_LOAD_CONCURRENCY && archiveLoadQueue.length > 0){
+    var item = archiveLoadQueue.shift();
+    archiveLoadsActive++;
+    assignArtworkToNode(item.node, item.artwork, function(){
+      archiveLoadsActive--;
+      processArchiveLoadQueue();
+    });
+  }
 }
 
 fetchLocalDatabase().then(function(localItems){
@@ -812,17 +821,23 @@ fetchLocalDatabase().then(function(localItems){
 
   var remainingAfterLocal = Math.max(0, IMAGE_NODES.length - localArtworks.length);
 
-  fetchOpenverseArtworks(remainingAfterLocal).then(function(openverseArtworks){
-    var remainingAfterOpenverse = Math.max(0, remainingAfterLocal - openverseArtworks.length);
-
-    fetchArchiveArtworks(remainingAfterOpenverse).then(function(archiveArtworks){
-      var allArtworks = localArtworks.concat(openverseArtworks).concat(archiveArtworks);
-      allArtworks.forEach(function(artwork, i){
-        var node = IMAGE_NODES[i];
-        if(!node) return;
-        assignArtworkToNode(node, artwork);
-      });
+  fetchArchiveArtworks(remainingAfterLocal).then(function(archiveArtworks){
+    var allArtworks = localArtworks.concat(archiveArtworks);
+    allArtworks.forEach(function(artwork, i){
+      var node = IMAGE_NODES[i];
+      if(!node) return;
+      enqueueArtworkLoad(node, artwork);
     });
+    // Riepilogo diagnostico: apri F12 → Console nel browser per vedere quanti tasselli
+    // sono arrivati da ciascuna fonte e quanti sono rimasti sul placeholder generato.
+    // Un numero basso da una fonte non è per forza un errore: può anche voler dire che
+    // quella fonte aveva semplicemente meno opere disponibili di quante richieste.
+    console.log('[Iperuranio] tasselli-immagine riempiti: ' + JSON.stringify({
+      totali: IMAGE_NODES.length,
+      database_personale: localArtworks.length,
+      wikimedia_commons: archiveArtworks.length,
+      rimasti_su_placeholder: Math.max(0, IMAGE_NODES.length - allArtworks.length)
+    }));
   });
 });
 
