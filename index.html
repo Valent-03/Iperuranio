@@ -1,0 +1,1361 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Iperuranio — Prototipo 3D</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;1,300&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #000000;
+    --bg-deep: #000000;
+    --ink: #f2f2ef;
+    --ink-dim: #8a8a86;
+    --accent: #34ffe0;
+    --line: rgba(242,242,239,0.16);
+    --mono: 'JetBrains Mono', monospace;
+    --serif: 'Fraunces', Georgia, serif;
+  }
+  *{ box-sizing:border-box; }
+  html,body{
+    margin:0; padding:0; height:100%; width:100%;
+    background: #000000;
+    color: var(--ink);
+    font-family: var(--mono);
+    overflow:hidden;
+  }
+  #canvas-wrap{ position:absolute; inset:0; }
+  canvas{ display:block; }
+
+  .hdr{
+    position:absolute; top:0; left:0; right:0;
+    padding: 30px 32px 0 32px;
+    z-index: 5;
+    pointer-events:none;
+  }
+  .hdr .title-row{
+    display:flex; align-items:baseline; gap:6px;
+    pointer-events:none;
+  }
+  .hdr h1{
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    font-weight: 700;
+    font-size: clamp(34px, 4.8vw, 50px);
+    letter-spacing: 1px;
+    margin:0;
+    color: transparent;
+    -webkit-text-stroke: 1.4px var(--ink);
+    text-stroke: 1.4px var(--ink);
+    cursor: pointer;
+    pointer-events: auto;
+    transform-origin: left center;
+    transition: transform 0.2s ease, -webkit-text-stroke-color 0.2s ease;
+  }
+  .hdr h1:hover{ transform: scale(1.06); }
+  .hdr .ring{
+    width:13px; height:13px;
+    border:1.8px solid var(--accent);
+    border-radius:50%;
+    box-shadow: 0 0 0 1.5px var(--ink); /* contorno bianco attorno al cerchio color accent */
+    transform: translateY(-20px);
+    transition: transform 0.2s ease;
+  }
+  /* Il "grado" si ingrandisce insieme alla scritta quando il cursore la tocca */
+  .hdr h1:hover + .ring{ transform: translateY(-20px) scale(1.35); }
+
+  .nav{
+    position:absolute; top: 40px; right:32px;
+    display:flex; gap: 26px;
+    z-index: 6;
+  }
+  .nav button{
+    background:none; border:none; cursor:pointer;
+    font-family: 'Helvetica Neue', Arial, sans-serif; font-weight: 400;
+    font-size: 16px;
+    color: var(--ink-dim);
+    padding: 2px 0;
+    border-bottom: 1.5px solid transparent;
+    transition: color 0.2s ease, border-color 0.2s ease;
+  }
+  .nav button:hover{ color: var(--ink); }
+  .nav button.active{ color: var(--ink); border-bottom-color: var(--accent); }
+
+  .hint{
+    position:absolute; bottom: 20px; left:50%; transform:translateX(-50%);
+    font-size: 10px; color: var(--ink-dim); letter-spacing: 1px;
+    z-index: 4; pointer-events:none;
+  }
+
+  /* Mini pannello di dettaglio: scheda leggera ancorata a destra, la scena resta visibile
+     e l'immagine/parola cliccata resta dov'è, dentro la spirale o la griglia */
+  .detail-overlay{
+    position:absolute; top: 96px; right: 32px; bottom: 76px;
+    width: min(300px, 84vw);
+    z-index:30;
+    display:flex; justify-content:flex-end;
+    pointer-events:none;
+  }
+  .detail-panel{
+    width: 100%;
+    max-height: 100%;
+    overflow-y: auto;
+    background: rgba(0,0,0,0.9);
+    border: 1px solid var(--accent);
+    backdrop-filter: blur(8px);
+    border-radius: 4px;
+    padding: 22px 24px 26px 24px;
+    position: relative;
+    opacity: 0;
+    transform: translateX(16px);
+    pointer-events: none;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+  }
+  .detail-overlay.show .detail-panel{ opacity:1; transform:translateX(0); pointer-events:auto; }
+  .detail-panel .close-btn{
+    position:absolute; top:14px; right:16px;
+    background:none; border:none; color:var(--ink-dim);
+    font-size:18px; cursor:pointer; line-height:1;
+  }
+  .detail-panel .close-btn:hover{ color:var(--ink); }
+
+  .dp-info{ padding-right: 18px; }
+  .dp-code{ font-size: 10px; letter-spacing:1.5px; text-transform:uppercase; color: var(--ink-dim); }
+  .dp-title{
+    font-family: 'Helvetica Neue', Arial, sans-serif; font-weight:700;
+    font-size: 19px; margin: 6px 0 12px 0; color: var(--ink); line-height:1.3;
+  }
+  .dp-meta-row{
+    display:flex; justify-content:space-between;
+    font-size: 11px; color: var(--ink-dim);
+    padding: 6px 0; border-top: 1px solid var(--line);
+  }
+  .dp-meta-row span:last-child{ color: var(--ink); text-align:right; }
+
+  .dp-download{
+    display:inline-block; margin-top: 14px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.5px;
+    color: var(--ink); text-decoration:none;
+    border-bottom: 1px solid var(--ink-dim);
+    padding-bottom: 2px;
+    transition: border-color 0.2s ease, opacity 0.2s ease;
+  }
+  .dp-download:hover{ border-color: var(--accent); }
+  .dp-download.hidden{ display:none; }
+
+  .dp-magnify{
+    position:absolute; top:14px; right:46px;
+    width:26px; height:26px;
+    background:none; border:1px solid var(--line); border-radius:50%;
+    color: var(--ink-dim); font-size: 12px;
+    cursor:pointer; display:flex; align-items:center; justify-content:center;
+    transition: border-color 0.2s ease, color 0.2s ease;
+  }
+  .dp-magnify:hover{ border-color: var(--accent); color: var(--ink); }
+  .dp-magnify.hidden{ display:none; }
+
+  .lightbox{
+    position:absolute; inset:0; z-index:60;
+    background: rgba(0,0,0,0.94);
+    display:flex; align-items:center; justify-content:center;
+    opacity:0; pointer-events:none;
+    transition: opacity 0.25s ease;
+  }
+  .lightbox.show{ opacity:1; pointer-events:auto; }
+  .lightbox img{
+    max-width:85vw; max-height:85vh;
+    border-radius:4px; border:1px solid var(--accent);
+    image-rendering: pixelated; /* i placeholder sono a bassa risoluzione: sulle immagini reali dell'archivio si disattiva (vedi .is-real) */
+  }
+  .lightbox img.is-real{ image-rendering: auto; }
+  .lightbox .close-btn{
+    position:absolute; top:26px; right:32px;
+    background:none; border:none; color: var(--ink);
+    font-size:26px; cursor:pointer; line-height:1;
+  }
+
+  .dp-conn-label{
+    font-size: 10px; letter-spacing:1.5px; text-transform:uppercase; color: var(--ink-dim);
+    margin: 18px 0 10px 0; padding-top: 14px; border-top: 1px solid var(--line);
+  }
+  .dp-conn-grid{ display:flex; flex-wrap:wrap; gap:7px; }
+  .dp-conn-img{
+    width:42px; height:42px; border-radius:4px; cursor:pointer;
+    overflow:hidden; border: 1px solid var(--line);
+    transition: transform 0.15s ease, border-color 0.15s ease;
+  }
+  .dp-conn-img:hover{ border-color: var(--accent); }
+  .dp-conn-img img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .dp-conn-img:hover{ transform: scale(1.08); }
+  .dp-conn-word{
+    cursor:pointer; border:1px solid var(--line); border-radius:4px;
+    font-family: 'Helvetica Neue', Arial, sans-serif; font-weight:400;
+    font-size:11px; color: var(--ink-dim);
+    padding: 7px 10px;
+    display:flex; align-items:center;
+    transition: border-color 0.2s ease, color 0.2s ease;
+  }
+  .dp-conn-word:hover{ border-color: var(--accent); color: var(--ink); }
+
+  /* Overlay di istruzioni iniziale */
+  .onboarding{
+    position:absolute; inset:0; z-index:50;
+    display:flex; align-items:center; justify-content:center;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(2px);
+    opacity:1; transition: opacity 0.6s ease;
+    cursor:pointer;
+  }
+  .onboarding.hide{ opacity:0; pointer-events:none; }
+  .onboarding-card{
+    max-width: 420px; text-align:center; padding: 28px 34px;
+    border:1px solid var(--accent); border-radius:4px;
+    background: rgba(0,0,0,0.92);
+  }
+  .onboarding-card .oc-title{
+    font-family: 'Helvetica Neue', Arial, sans-serif; font-weight:700;
+    font-size: 20px; margin-bottom: 16px; color: var(--ink);
+  }
+  .onboarding-card .oc-list{
+    font-size: 11px; color: var(--ink-dim); line-height: 2.1; letter-spacing: 0.3px;
+  }
+  .onboarding-card .oc-list b{ color: var(--ink); font-weight: 600; }
+  .onboarding-card .oc-hint{
+    margin-top: 16px; font-size: 10px; color: var(--ink-dim); letter-spacing: 1px;
+  }
+  .oc-ok-btn{
+    margin-top: 18px;
+    background: none;
+    border: 1px solid var(--accent);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 1px;
+    padding: 8px 22px;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: border-color 0.2s ease, background 0.2s ease;
+  }
+  .oc-ok-btn:hover{ background: rgba(52,255,224,0.1); }
+
+  .help-btn{
+    position:absolute; bottom: 20px; right: 32px;
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    border: 1px solid var(--accent);
+    background: rgba(0,0,0,0.7);
+    color: var(--accent);
+    font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 14px;
+    cursor: pointer;
+    z-index: 15;
+    transition: background 0.2s ease;
+  }
+  .help-btn:hover{ background: rgba(52,255,224,0.12); }
+
+  /* Pannello filtro per tag */
+  .filter-overlay{
+    position:absolute; top: 88px; right: 32px;
+    width: min(260px, 84vw); max-height: 60vh;
+    z-index: 25;
+    background: rgba(0,0,0,0.92);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    padding: 16px 40px 18px 18px;
+    overflow-y: auto;
+    opacity:0; transform: translateY(-8px);
+    pointer-events:none;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+  }
+  .filter-overlay.show{ opacity:1; transform:translateY(0); pointer-events:auto; }
+  .filter-overlay .fo-label{
+    font-size:10px; letter-spacing:1.5px; text-transform:uppercase; color:var(--ink-dim);
+    margin-bottom:10px;
+  }
+  .fo-close{
+    position:absolute; top:12px; right:14px;
+    background:none; border:none; color:var(--ink-dim);
+    font-size:18px; cursor:pointer; line-height:1;
+    transition: color 0.2s ease;
+  }
+  .fo-close:hover{ color: var(--accent); }
+  .fo-tags{ display:flex; flex-wrap:wrap; gap:6px; }
+  .fo-tag{
+    font-family: 'Helvetica Neue', Arial, sans-serif; font-size:11px;
+    color: var(--ink-dim); border:1px solid var(--line); border-radius:3px;
+    padding:5px 9px; cursor:pointer;
+    transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+  }
+  .fo-tag:hover{ border-color: var(--accent); color: var(--ink); }
+  .fo-tag.active{ border-color: var(--accent); color: var(--ink); background: rgba(52,255,224,0.12); }
+</style>
+</head>
+<body>
+
+<div id="canvas-wrap"></div>
+
+<button class="help-btn" id="helpBtn" title="Rivedi le istruzioni">?</button>
+
+<div class="onboarding" id="onboarding">
+  <div class="onboarding-card">
+    <div class="oc-title">Welcome to Iperuranio°</div>
+    <div class="oc-list">
+      <div>In <b>Blend</b>: drag to rotate the spiral, Shift+Drag (or right click) to move vertically</div>
+      <div>In <b>Images</b> / <b>Words</b>: drag to pan freely in any direction, no rotation</div>
+      <div><b>Arrows</b> to navigate</div>
+      <div><b>Scroll</b> to zoom</div>
+      <div><b>Click</b> an element for more details</div>
+      <div>Enjoy the exploration</div>
+    </div>
+    <button class="oc-ok-btn" id="onboardingOk">OK</button>
+  </div>
+</div>
+
+<div class="hdr">
+  <div class="title-row">
+    <h1 id="logoTitle" title="Torna alla vista iniziale">Iperuranio</h1>
+    <div class="ring"></div>
+  </div>
+</div>
+
+<div class="nav">
+  <button class="nav-btn active" data-mode="mixed">Blend</button>
+  <button class="nav-btn" data-mode="images">Images</button>
+  <button class="nav-btn" data-mode="words">Words</button>
+  <button id="luckyBtn">I feel lucky!</button>
+  <button id="filterBtn">Filter</button>
+</div>
+
+<div class="filter-overlay" id="filterOverlay">
+  <button class="fo-close" id="filterClose" title="Rimuovi filtri">&times;</button>
+  <div class="fo-label">Filtra per tag</div>
+  <div class="fo-tags" id="filterTags"></div>
+</div>
+
+<div class="detail-overlay" id="detailOverlay">
+  <div class="detail-panel">
+    <button class="close-btn" id="closeModal">&times;</button>
+    <button class="dp-magnify" id="dMagnify" title="Espandi immagine">&#128269;</button>
+    <div class="dp-info">
+      <div class="dp-code" id="dCode">A-000</div>
+      <div class="dp-title" id="dTitle">Titolo</div>
+      <div id="dMetaRows"></div>
+      <a class="dp-download" id="dDownload" href="#" download>Scarica immagine</a>
+      <div class="dp-conn-label">Similar tags</div>
+      <div class="dp-conn-grid" id="dConnGrid"></div>
+    </div>
+  </div>
+</div>
+
+<div class="lightbox" id="lightbox">
+  <button class="close-btn" id="lightboxClose">&times;</button>
+  <img id="lightboxImg" src="" alt="">
+</div>
+
+<div class="hint" id="hintText">Drag to rotate · Shift+Drag to move vertically · Scroll to zoom · Click an element</div>
+
+
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script>
+(function(){
+
+// ---------- DATA ----------
+var IMG_COLORS = ["#7F77DD","#D85A30","#1D9E75","#D4537E","#BA7517","#4E8FBF","#8A6FB0","#B0A23A"];
+var WORDS = [
+  "sogno","eco","forma","luce","tempo","memoria","soglia","riflesso","ombra","silenzio",
+  "origine","frammento","traccia","essenza","molteplicità","unità","distanza","presenza","assenza","custodia",
+  "radice","orizzonte","attesa","ritorno","dissolvenza","permanenza","mutamento","specchio","vuoto","pienezza",
+  "confine","passaggio","richiamo","dimora","deriva","costellazione","arcipelago","sedimento","affioramento","latenza",
+  "vestigia","penombra","bagliore","quiete","tensione","risonanza","frattura","involucro","germe","epifania"
+];
+var IMAGE_COUNT = 200;
+var VARIANT_COUNT = WORDS.length; // una texture/colore per ogni tag: il colore riflette il gruppo di appartenenza
+
+var NODES = [];
+
+// Ogni immagine riceve 3 "tag" presi dall'elenco delle parole: sono ancora dati fittizi
+// (calcolati con una formula, non scelti a mano), ma il MECCANISMO è quello vero che userai
+// con le tue immagini: quando le avrai catalogate, basterà sostituire questi tag con quelli
+// reali che avrai assegnato tu, senza cambiare nient'altro nel codice.
+// Il PRIMO tag di ogni immagine è considerato il suo "tag primario": determina sia il colore
+// (la sezione del cerchio a cui appartiene) sia la posizione nella spirale "blend".
+function assignTags(i){
+  var idxs = [ (i*7+3) % WORDS.length, (i*13+11) % WORDS.length, (i*19+5) % WORDS.length ];
+  var tags = [];
+  idxs.forEach(function(idx){
+    if(tags.indexOf(WORDS[idx]) === -1) tags.push(WORDS[idx]);
+  });
+  return tags;
+}
+
+for(var i=0;i<IMAGE_COUNT;i++){
+  var tags = assignTags(i);
+  var primaryIdx = WORDS.indexOf(tags[0]);
+  NODES.push({ id:"img"+i, type:"image", variant: primaryIdx, code: "A-"+(i+1), tags: tags });
+}
+WORDS.forEach(function(w){
+  NODES.push({ id:"w"+w, type:"word", label: w });
+});
+
+// ---------- TEXTURES ----------
+// Generiamo solo VARIANT_COUNT texture uniche e le riusiamo su tutte le 200 immagini,
+// altrimenti 200 canvas da 512x512 manderebbero in crisi la memoria del browser.
+function makeImageTexture(variantIndex){
+  var size = 256;
+  var c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  var ctx = c.getContext('2d');
+  var color = IMG_COLORS[variantIndex % IMG_COLORS.length];
+
+  ctx.fillStyle = "#d9cdb0";
+  ctx.fillRect(0,0,size,size);
+  ctx.fillStyle = color;
+  ctx.fillRect(0,0,size,size*0.65);
+
+  for(var n=0;n<220;n++){
+    ctx.fillStyle = "rgba(0,0,0,"+(Math.random()*0.04)+")";
+    ctx.fillRect(Math.random()*size, Math.random()*size, 2, 2);
+  }
+
+  ctx.strokeStyle = "rgba(20,20,18,0.5)";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(2,2,size-4,size-4);
+
+  ctx.fillStyle = "#1a1a17";
+  ctx.font = "bold 18px monospace";
+  ctx.fillText("A-"+(variantIndex+1), 14, size*0.65 + 26);
+
+  var tex = new THREE.CanvasTexture(c);
+  tex.needsUpdate = true;
+  return { tex: tex, dataUrl: c.toDataURL('image/png') };
+}
+
+function makeWordTexture(node){
+  var w = 700, h = 220;
+  var c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  var ctx = c.getContext('2d');
+  // sfondo trasparente
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle = "#f2f2ef";
+  ctx.font = "italic 300 90px 'Fraunces', Georgia, serif";
+  ctx.textBaseline = "middle";
+  ctx.fillText(node.label, 10, h/2);
+
+  var tex = new THREE.CanvasTexture(c);
+  tex.needsUpdate = true;
+  return { tex: tex, aspect: w/h };
+}
+
+// ---------- SCENE ----------
+var wrap = document.getElementById('canvas-wrap');
+var scene = new THREE.Scene();
+var camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 2000);
+
+var renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+wrap.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+var dirLight = new THREE.DirectionalLight(0xffffff, 0.55);
+dirLight.position.set(8, 12, 10);
+scene.add(dirLight);
+
+// ---------- CONTROLLI MANUALI ----------
+// In modalità "blend" (spirale) i controlli sono orbitali: si ruota attorno al centro.
+// In modalità "images"/"words" (griglia) non si ruota affatto: si scorre liberamente in
+// tutte le direzioni sul piano, come su una piattaforma pannabile, con uno zoom iniziale
+// più ravvicinato di default.
+var camDistance = 55, targetDistance = 55;
+var rotX = -0.1, rotY = 0.4, targetRotX = rotX, targetRotY = rotY;
+var focusY = 0, targetFocusY = 0; // punto verticale attorno a cui orbita la camera: permette di "scorrere" su e giù
+var autoRotate = true;
+var isDragging = false, isPanning = false;
+var lastX = 0, lastY = 0, downX = 0, downY = 0, downButton = 0;
+// stato della camera salvato prima di uno zoom su un elemento, per poterci tornare alla chiusura
+var savedCam = null;
+var focusMesh = null;       // elemento su cui la camera è agganciata in questo momento (o null)
+var focusViewDistance = 6;  // quanto siamo vicini all'elemento a fuoco: regolabile con lo scroll
+
+// Stato dello scorrimento libero (modalità griglia: images / words)
+var panX = 0, panY = 0, targetPanX = 0, targetPanY = 0;
+var GRID_DEFAULT_DISTANCE = 15, GRID_MIN_DISTANCE = 6, GRID_MAX_DISTANCE = 42;
+var panDistance = GRID_DEFAULT_DISTANCE, targetPanDistance = GRID_DEFAULT_DISTANCE;
+var gridPanBoundX = 30, gridPanBoundY = 30; // limiti di scorrimento, ricalcolati in base al contenuto
+
+renderer.domElement.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+
+renderer.domElement.addEventListener('pointerdown', function(e){
+  autoRotate = false;
+  lastX = e.clientX; lastY = e.clientY;
+  downX = e.clientX; downY = e.clientY;
+  downButton = e.button;
+  if(focusMesh) return; // mentre siamo a fuoco su un elemento non si trascina la camera manualmente
+  if(mode === 'mixed'){
+    if(e.button === 2 || e.shiftKey){ isPanning = true; }
+    else { isDragging = true; }
+  } else {
+    // in griglia (images/words) qualsiasi trascinamento scorre liberamente la piattaforma,
+    // in tutte le direzioni: niente rotazione, niente distinzione tasto destro/Shift
+    isDragging = true;
+  }
+});
+window.addEventListener('pointerup', function(e){
+  var dist = Math.hypot(e.clientX - downX, e.clientY - downY);
+  if(dist < 6 && downButton !== 2){ tryClick(e); }
+  isDragging = false; isPanning = false;
+});
+window.addEventListener('pointermove', function(e){
+  if(!isDragging && !isPanning) return;
+  var dx = e.clientX - lastX, dy = e.clientY - lastY;
+  lastX = e.clientX; lastY = e.clientY;
+  if(mode === 'mixed'){
+    if(isPanning){
+      targetFocusY += dy * 0.06;
+      targetFocusY = Math.max(-70, Math.min(70, targetFocusY));
+    } else if(isDragging){
+      targetRotY += dx * 0.005;
+      targetRotX += dy * 0.005;
+      targetRotX = Math.max(-1.1, Math.min(1.1, targetRotX));
+    }
+  } else if(isDragging){
+    // scorrimento libero della griglia: il contenuto segue il gesto di trascinamento,
+    // in ogni direzione, con un passo proporzionale allo zoom corrente
+    var panFactor = targetPanDistance * 0.0016;
+    targetPanX -= dx * panFactor;
+    targetPanY += dy * panFactor;
+    targetPanX = Math.max(-gridPanBoundX, Math.min(gridPanBoundX, targetPanX));
+    targetPanY = Math.max(-gridPanBoundY, Math.min(gridPanBoundY, targetPanY));
+  }
+});
+renderer.domElement.addEventListener('wheel', function(e){
+  e.preventDefault();
+  if(focusMesh){
+    // zoom ulteriore sull'elemento a cui siamo agganciati
+    focusViewDistance += e.deltaY * 0.008;
+    focusViewDistance = Math.max(1.1, Math.min(20, focusViewDistance));
+  } else if(mode === 'mixed'){
+    targetDistance += e.deltaY * 0.02;
+    targetDistance = Math.max(8, Math.min(90, targetDistance));
+  } else {
+    targetPanDistance += e.deltaY * 0.02;
+    targetPanDistance = Math.max(GRID_MIN_DISTANCE, Math.min(GRID_MAX_DISTANCE, targetPanDistance));
+  }
+}, {passive:false});
+
+// Alternativa da tastiera per chi non ha un tasto destro/trackpad comodo da usare in trascinamento
+window.addEventListener('keydown', function(e){
+  if(focusMesh) return;
+  if(mode === 'mixed'){
+    if(e.key === 'ArrowUp'){ targetFocusY -= 4; targetFocusY = Math.max(-70, Math.min(70, targetFocusY)); }
+    if(e.key === 'ArrowDown'){ targetFocusY += 4; targetFocusY = Math.max(-70, Math.min(70, targetFocusY)); }
+  } else {
+    var step = targetPanDistance * 0.22;
+    if(e.key === 'ArrowUp'){ targetPanY += step; }
+    if(e.key === 'ArrowDown'){ targetPanY -= step; }
+    if(e.key === 'ArrowLeft'){ targetPanX -= step; }
+    if(e.key === 'ArrowRight'){ targetPanX += step; }
+    targetPanX = Math.max(-gridPanBoundX, Math.min(gridPanBoundX, targetPanX));
+    targetPanY = Math.max(-gridPanBoundY, Math.min(gridPanBoundY, targetPanY));
+  }
+});
+
+function updateCamera(){
+  if(focusMesh){
+    // la camera si mette dritta di fronte all'elemento scelto, poi si sposta lateralmente
+    // (mantenendo lo sguardo puntato esattamente sull'elemento) così l'immagine finisce a
+    // sinistra dello schermo e non resta mai coperta dalla scheda a destra
+    var normal = new THREE.Vector3(Math.sin(focusMesh.rotation.y), 0, Math.cos(focusMesh.rotation.y));
+    var straightPos = focusMesh.position.clone().add(normal.clone().multiplyScalar(focusViewDistance));
+    camera.position.copy(straightPos);
+    camera.lookAt(focusMesh.position);
+    camera.updateMatrixWorld();
+    var camRight = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+    var sideOffset = focusViewDistance * 0.42; // quanto spostare l'inquadratura verso destra (l'immagine appare a sinistra)
+    var desired = straightPos.clone().add(camRight.multiplyScalar(sideOffset));
+    camera.position.lerp(desired, 0.09);
+    camera.lookAt(focusMesh.position);
+    return;
+  }
+  if(mode === 'mixed'){
+    if(autoRotate && !isDragging && !isPanning){ targetRotY += 0.00035; }
+    rotX += (targetRotX - rotX) * 0.08;
+    rotY += (targetRotY - rotY) * 0.08;
+    camDistance += (targetDistance - camDistance) * 0.08;
+    focusY += (targetFocusY - focusY) * 0.1;
+    var dx = camDistance * Math.sin(rotY) * Math.cos(rotX);
+    var dy = camDistance * Math.sin(rotX) + focusY;
+    var dz = camDistance * Math.cos(rotY) * Math.cos(rotX);
+    // interpoliamo anche qui la posizione (non solo i parametri): così, uscendo dalla modalità
+    // "a fuoco" (dove la camera è altrove), il ritorno è una transizione morbida e non uno scatto
+    camera.position.x += (dx - camera.position.x) * 0.12;
+    camera.position.y += (dy - camera.position.y) * 0.12;
+    camera.position.z += (dz - camera.position.z) * 0.12;
+    camera.lookAt(0, focusY, 0);
+  } else {
+    // modalità griglia (images / words): nessuna rotazione. La camera trasla parallela al
+    // piano, sempre rivolta dritta in avanti, come se si scorresse una piattaforma piatta.
+    panX += (targetPanX - panX) * 0.14;
+    panY += (targetPanY - panY) * 0.14;
+    panDistance += (targetPanDistance - panDistance) * 0.1;
+    camera.position.x += (panX - camera.position.x) * 0.18;
+    camera.position.y += (panY - camera.position.y) * 0.18;
+    camera.position.z += (panDistance - camera.position.z) * 0.18;
+    camera.lookAt(panX, panY, 0);
+  }
+}
+
+// ---------- MESHES ----------
+var meshes = [];
+
+// Geometria e texture condivise: creiamo solo VARIANT_COUNT texture/materiali per le
+// immagini (clonati per ogni carta così ognuna può avere una propria opacità animata),
+// e un'unica geometria quadrata riusata su tutte le 200 immagini.
+var imageGeo = new THREE.PlaneGeometry(2.2, 2.2);
+var imageVariantMaterials = [];
+var imageVariantDataUrls = []; // usati per mostrare l'immagine nel pannello di dettaglio
+for(var v=0; v<VARIANT_COUNT; v++){
+  var texResult = makeImageTexture(v);
+  imageVariantMaterials.push(new THREE.MeshStandardMaterial({map:texResult.tex, roughness:0.7, metalness:0.05, side:THREE.DoubleSide}));
+  imageVariantDataUrls.push(texResult.dataUrl);
+}
+
+NODES.forEach(function(node){
+  var mesh;
+  if(node.type === "image"){
+    var mat = imageVariantMaterials[node.variant].clone();
+    mesh = new THREE.Mesh(imageGeo, mat);
+  } else {
+    var wt = makeWordTexture(node);
+    var mat2 = new THREE.MeshBasicMaterial({map:wt.tex, transparent:true, side:THREE.DoubleSide});
+    var h = 1.6, w = h*wt.aspect;
+    var geo2 = new THREE.PlaneGeometry(w, h);
+    mesh = new THREE.Mesh(geo2, mat2);
+  }
+  mesh.userData = node;
+  scene.add(mesh);
+  meshes.push(mesh);
+});
+
+var meshById = {};
+meshes.forEach(function(m){ meshById[m.userData.id] = m; });
+
+// ---------- IMMAGINI REALI: database personale + archivi pubblici ----------
+// Le immagini partono come placeholder generati (come prima) e vengono sostituite, una per
+// una, non appena arrivano i dati reali. Tre fonti, in ordine di priorità:
+//   1) il TUO database personale — un file data/images.json dentro il repository: ogni voce
+//      lì dentro riempie uno slot con precedenza assoluta (vedi il file per il formato).
+//      Aggiungere un'immagine = aggiungere una voce a quel file, niente altro.
+//   2) gli slot ancora liberi vengono riempiti da Openverse (aggrega immagini con licenza
+//      Creative Commons da tante fonti diverse — Flickr, archivi indipendenti, musei — quindi
+//      è la fonte più varia/sperimentale delle due). Nessuna chiave richiesta: le richieste
+//      partono anonime, dal browser di ogni visitatore, esattamente come le altre due fonti.
+//   3) quel che resta ancora libero viene riempito da Wikimedia Commons (API pubblica, nessuna
+//      chiave richiesta, CORS abilitato sia sull'API sia sui file — a differenza dell'Art
+//      Institute of Chicago, provato in un primo momento, la cui API immagini si è rivelata
+//      inaffidabile per un blocco CORS lato loro). Fa da "rete di sicurezza": se Openverse
+//      restituisce meno immagini del previsto (o fallisce del tutto), Wikimedia copre il resto.
+// Se una richiesta fallisce (file assente, rete assente, API irraggiungibile) il sito resta
+// perfettamente funzionante con i placeholder, esattamente come prima: nessun punto di rottura.
+var IMAGE_NODES = NODES.filter(function(n){ return n.type === "image"; });
+var WIKIMEDIA_CATEGORY = "Category:Paintings in the Metropolitan Museum of Art";
+var OPENVERSE_QUERY = "contemporary art";
+var OPENVERSE_LICENSES = "cc0,pdm"; // solo licenze che non richiedono attribuzione
+var OPENVERSE_CATEGORIES = "digitized_artwork,illustration,photograph";
+var LOCAL_DATABASE_URL = "data/images.json";
+
+function stripHtml(html){
+  if(!html) return "";
+  var tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  return (tmp.textContent || tmp.innerText || "").trim();
+}
+
+// 1) Database personale: un semplice file JSON servito dallo stesso sito (stessa origine,
+// quindi nessun problema di CORS in assoluto). Se manca o è vuoto, restituisce semplicemente
+// un elenco vuoto: il sito si affida solo agli archivi pubblici.
+function fetchLocalDatabase(){
+  return fetch(LOCAL_DATABASE_URL)
+    .then(function(res){ return res.ok ? res.json() : []; })
+    .then(function(list){ return Array.isArray(list) ? list : []; })
+    .catch(function(){ return []; });
+}
+
+// 2) Openverse: aggrega immagini riutilizzabili da tante fonti diverse. Per la texture
+// WebGL usiamo il campo "thumbnail" (proxato dai server di Openverse, pensato apposta per
+// essere riusato altrove) invece di "url" (il file originale, che vive su un sito terzo
+// qualsiasi e potrebbe non avere le stesse garanzie CORS). "url" resta comunque perfetto per
+// il link di download nel pannello, dove il CORS non è richiesto.
+function fetchOpenverseArtworks(target){
+  if(target <= 0) return Promise.resolve([]);
+  var url = "https://api.openverse.org/v1/images/"
+    + "?q=" + encodeURIComponent(OPENVERSE_QUERY)
+    + "&license=" + OPENVERSE_LICENSES
+    + "&category=" + OPENVERSE_CATEGORIES
+    + "&mature=false"
+    + "&page_size=" + Math.min(target, 60);
+
+  return fetch(url)
+    .then(function(res){ return res.ok ? res.json() : null; })
+    .then(function(json){
+      if(!json || !Array.isArray(json.results)) return [];
+      return json.results
+        .filter(function(r){ return r && r.thumbnail; })
+        .map(function(r){
+          return {
+            id: "OV-" + r.id,
+            title: r.title || "Senza titolo",
+            artist: r.creator || "",
+            date: "",
+            medium: r.category ? r.category.replace(/_/g, " ") : "",
+            thumbUrl: r.thumbnail,
+            fullUrl: r.url || r.thumbnail,
+            source: "Openverse" + (r.source ? " (" + r.source + ")" : "")
+          };
+        })
+        .slice(0, target);
+    })
+    .catch(function(){ return []; });
+}
+
+// 3) Archivio pubblico (Wikimedia Commons), usato solo per gli slot che il database
+// personale e Openverse non coprono.
+function fetchArchiveArtworks(target){
+  if(target <= 0) return Promise.resolve([]);
+  var url = "https://commons.wikimedia.org/w/api.php"
+    + "?action=query&format=json&origin=*"
+    + "&generator=categorymembers&gcmtitle=" + encodeURIComponent(WIKIMEDIA_CATEGORY)
+    + "&gcmnamespace=6&gcmtype=file&gcmlimit=" + Math.min(target, 200)
+    + "&prop=imageinfo&iiprop=" + encodeURIComponent("url|extmetadata|size") + "&iiurlwidth=400";
+
+  return fetch(url)
+    .then(function(res){ return res.ok ? res.json() : null; })
+    .then(function(json){
+      if(!json || !json.query || !json.query.pages) return [];
+      var pages = Object.keys(json.query.pages).map(function(k){ return json.query.pages[k]; });
+      return pages
+        .filter(function(pg){ return pg.imageinfo && pg.imageinfo[0] && pg.imageinfo[0].thumburl; })
+        .map(function(pg){
+          var info = pg.imageinfo[0];
+          var meta = info.extmetadata || {};
+          var objectName = meta.ObjectName ? stripHtml(meta.ObjectName.value) : "";
+          var filenameTitle = pg.title.replace(/^File:/, "").replace(/\.[a-zA-Z0-9]+$/, "").replace(/_/g, " ");
+          return {
+            id: "WC-" + pg.pageid,
+            title: objectName || filenameTitle,
+            artist: meta.Artist ? stripHtml(meta.Artist.value) : "",
+            date: meta.DateTimeOriginal ? stripHtml(meta.DateTimeOriginal.value) : (meta.DateTime ? stripHtml(meta.DateTime.value) : ""),
+            medium: meta.Medium ? stripHtml(meta.Medium.value) : "",
+            thumbUrl: info.thumburl,
+            fullUrl: info.url,
+            source: "Wikimedia Commons"
+          };
+        })
+        .slice(0, target);
+    })
+    .catch(function(){ return []; });
+}
+
+var archiveTextureLoader = new THREE.TextureLoader();
+archiveTextureLoader.crossOrigin = 'anonymous';
+
+// Le foto reali non sono quadrate come i placeholder: ritagliamo (invece di deformare)
+// la texture per riempire il piano quadrato, con la stessa tecnica del "background-size: cover".
+function applyCoverFit(tex){
+  var img = tex.image;
+  if(!img || !img.width || !img.height) return;
+  var imgAspect = img.width / img.height; // il piano dell'immagine è quadrato: aspect 1
+  if(imgAspect > 1){
+    var rx = 1 / imgAspect;
+    tex.repeat.set(rx, 1);
+    tex.offset.set((1 - rx) / 2, 0);
+  } else {
+    var ry = imgAspect;
+    tex.repeat.set(1, ry);
+    tex.offset.set(0, (1 - ry) / 2);
+  }
+  tex.needsUpdate = true;
+}
+
+// Assegna un'opera (dal database personale o dall'archivio) al prossimo nodo-immagine libero,
+// carica la texture reale sopra al placeholder e aggiorna il pannello se è già aperto su di esso.
+function assignArtworkToNode(node, artwork){
+  node.archive = artwork;
+  node.imageUrlSmall = artwork.thumbUrl;
+  node.imageUrlLarge = artwork.fullUrl;
+  var mesh = meshById[node.id];
+  if(!mesh) return;
+  archiveTextureLoader.load(node.imageUrlSmall, function(tex){
+    applyCoverFit(tex);
+    mesh.material.map = tex;
+    mesh.material.needsUpdate = true;
+    if(typeof currentDetailNode !== 'undefined' && currentDetailNode === node){ openDetail(node); }
+  }, undefined, function(){
+    // errore di rete sulla singola immagine: resta il placeholder già assegnato, nessun crash
+  });
+}
+
+fetchLocalDatabase().then(function(localItems){
+  var localArtworks = localItems.map(function(item, i){
+    return {
+      id: "P-" + (i + 1),
+      title: item.title || "Senza titolo",
+      artist: item.artist || "",
+      date: item.date || "",
+      medium: item.medium || "",
+      thumbUrl: item.image,
+      fullUrl: item.image,
+      source: "Collezione personale"
+    };
+  }).filter(function(a){ return !!a.thumbUrl; });
+
+  var remainingAfterLocal = Math.max(0, IMAGE_NODES.length - localArtworks.length);
+
+  fetchOpenverseArtworks(remainingAfterLocal).then(function(openverseArtworks){
+    var remainingAfterOpenverse = Math.max(0, remainingAfterLocal - openverseArtworks.length);
+
+    fetchArchiveArtworks(remainingAfterOpenverse).then(function(archiveArtworks){
+      var allArtworks = localArtworks.concat(openverseArtworks).concat(archiveArtworks);
+      allArtworks.forEach(function(artwork, i){
+        var node = IMAGE_NODES[i];
+        if(!node) return;
+        assignArtworkToNode(node, artwork);
+      });
+    });
+  });
+});
+
+// ---------- LAYOUTS ----------
+// La spirale si adatta al numero di elementi: più elementi = spirale più ampia e con
+// più giri, così funziona bene sia con le 8 parole che con le 200+ immagini mescolate.
+function layoutSpiral(list){
+  var n = list.length;
+  var turns = Math.max(4, Math.round(n/18));
+  var maxRadius = 4 + Math.sqrt(n) * 2.6;
+  var vertExtent = maxRadius * 1.7;
+  return list.map(function(_, i){
+    var t = i/n;
+    var angle = t * Math.PI * 2 * turns;
+    var radius = 2 + t*maxRadius;
+    return {
+      x: Math.cos(angle)*radius,
+      y: (t-0.5)*vertExtent,
+      z: Math.sin(angle)*radius,
+      rx:0, ry: -angle + Math.PI/2, rz:0
+    };
+  });
+}
+
+function layoutGrid(list){
+  var cols = Math.ceil(Math.sqrt(list.length));
+  var spacing = 3.4;
+  var rows = Math.ceil(list.length/cols);
+  var offsetX = (cols-1)*spacing/2;
+  var offsetY = (rows-1)*spacing/2;
+  return list.map(function(mesh, i){
+    var col = i % cols;
+    var row = Math.floor(i/cols);
+    // scarto deterministico (stesso elemento = sempre lo stesso scarto) per un effetto
+    // "griglia scombinata", come ritagli sparsi invece di righe perfettamente allineate
+    var seed = hashStr(mesh.userData.id);
+    var jx = (pseudoRandom(seed + 1) - 0.5) * spacing * 0.55;
+    var jy = (pseudoRandom(seed + 2) - 0.5) * spacing * 0.55;
+    var jz = (pseudoRandom(seed + 3) - 0.5) * 1.6;
+    var jrot = (pseudoRandom(seed + 4) - 0.5) * 0.7;
+    return {
+      x: col*spacing - offsetX + jx,
+      y: -(row*spacing - offsetY) + jy,
+      z: jz,
+      rx:0, ry: jrot, rz:0
+    };
+  });
+}
+
+// Piccolo generatore pseudo-casuale ma deterministico: lo stesso id restituisce sempre
+// lo stesso numero, così lo scombinamento della griglia non "salta" ogni volta che
+// si cambia vista e si ritorna.
+function hashStr(s){
+  var h = 0;
+  for(var i=0;i<s.length;i++){ h = (h*31 + s.charCodeAt(i)) | 0; }
+  return h;
+}
+function pseudoRandom(seed){
+  var x = Math.sin(seed) * 10000;
+  return x - Math.floor(x);
+}
+
+// Adatta automaticamente la distanza della camera all'ingombro della disposizione attuale
+function fitCameraToPositions(positions){
+  var maxR = 10;
+  positions.forEach(function(p){
+    var r = Math.sqrt(p.x*p.x + p.y*p.y + p.z*p.z);
+    if(r > maxR) maxR = r;
+  });
+  targetDistance = Math.max(18, maxR * 2.1);
+}
+
+// Raggruppa le immagini per tag primario, in modo che immagini simili (stesso tag) occupino
+// una sezione contigua di anelli nella spirale — e ogni sezione ha un colore proprio, quindi
+// il cerchio risulta visivamente diviso in "fasce" per argomento. La parola-tag di ogni
+// sezione viene inserita subito prima delle immagini a cui è collegata.
+function buildMixedOrder(){
+  var images = meshes.filter(function(m){ return m.userData.type === "image"; });
+  var words = meshes.filter(function(m){ return m.userData.type === "word"; });
+  var result = [];
+  WORDS.forEach(function(label){
+    var wordMesh = words.filter(function(w){ return w.userData.label === label; })[0];
+    if(wordMesh) result.push(wordMesh);
+    var group = images.filter(function(m){ return m.userData.tags[0] === label; });
+    group.forEach(function(m){ result.push(m); });
+  });
+  return result;
+}
+
+var mode = "mixed";
+var activeFilterTag = null; // se impostato, mostra solo gli elementi collegati a questo tag
+
+function applyState(){
+  var visible, positions;
+  if(mode === "mixed"){
+    visible = buildMixedOrder();
+    positions = layoutSpiral(visible);
+  } else if(mode === "images"){
+    visible = meshes.filter(function(m){ return m.userData.type === "image"; });
+    positions = layoutGrid(visible);
+  } else { // words: griglia scombinata, come per le immagini
+    visible = meshes.filter(function(m){ return m.userData.type === "word"; });
+    positions = layoutGrid(visible);
+  }
+
+  if(activeFilterTag){
+    var filteredVisible = [], filteredPositions = [];
+    visible.forEach(function(m, i){
+      var d = m.userData;
+      var matches = d.type === "image" ? d.tags.indexOf(activeFilterTag) !== -1 : d.label === activeFilterTag;
+      if(matches){ filteredVisible.push(m); filteredPositions.push(positions[i]); }
+    });
+    visible = filteredVisible;
+    positions = filteredPositions;
+  }
+
+  var hidden = meshes.filter(function(m){ return visible.indexOf(m) === -1; });
+
+  var safePositions = positions.length ? positions : [{x:0,y:0,z:0}];
+  if(mode === 'mixed'){
+    fitCameraToPositions(safePositions);
+  } else {
+    // modalità griglia: calcoliamo i limiti di scorrimento in base all'ingombro reale del
+    // contenuto (filtro incluso) e ripartiamo da una vista centrata e ravvicinata (zoom di
+    // default), che poi si esplora scorrendo in tutte le direzioni invece di ruotare
+    var maxX = 6, maxY = 6;
+    safePositions.forEach(function(p){
+      maxX = Math.max(maxX, Math.abs(p.x));
+      maxY = Math.max(maxY, Math.abs(p.y));
+    });
+    gridPanBoundX = maxX + 5;
+    gridPanBoundY = maxY + 5;
+    targetPanX = 0; targetPanY = 0;
+    targetPanDistance = GRID_DEFAULT_DISTANCE;
+  }
+
+  var totalStagger = 0.8; // spalmiamo lo sfalsamento su una finestra fissa, indipendente dal numero di elementi
+  visible.forEach(function(mesh, i){
+    var p = positions[i];
+    var d = (i/Math.max(visible.length,1)) * totalStagger;
+    gsap.to(mesh.position, {x:p.x, y:p.y, z:p.z, duration:1.1, ease:"power3.inOut", delay:d});
+    gsap.to(mesh.rotation, {x:p.rx, y:p.ry, z:p.rz, duration:1.1, ease:"power3.inOut", delay:d});
+    gsap.to(mesh.scale, {x:1, y:1, z:1, duration:0.6, delay:d});
+    mesh.material.transparent = true;
+    gsap.to(mesh.material, {opacity:1, duration:0.6, delay:d});
+  });
+
+  hidden.forEach(function(mesh){
+    gsap.to(mesh.scale, {x:0.001, y:0.001, z:0.001, duration:0.5, ease:"power2.in"});
+    mesh.material.transparent = true;
+    gsap.to(mesh.material, {opacity:0, duration:0.4});
+  });
+}
+
+applyState();
+
+// ---------- NAV UI ----------
+var hintText = document.getElementById('hintText');
+var HINT_MIXED = 'Drag to rotate · Shift+Drag to move vertically · Scroll to zoom · Click an element';
+var HINT_GRID = 'Drag to pan in any direction · Scroll to zoom · Click an element';
+
+document.querySelectorAll('.nav-btn').forEach(function(btn){
+  btn.addEventListener('click', function(){
+    mode = btn.dataset.mode;
+    document.querySelectorAll('.nav-btn').forEach(function(b){ b.classList.remove('active'); });
+    btn.classList.add('active');
+    hintText.textContent = (mode === 'mixed') ? HINT_MIXED : HINT_GRID;
+    applyState();
+  });
+});
+
+// ---------- "I feel lucky!": passa a Blend e apre un elemento a caso ----------
+document.getElementById('luckyBtn').addEventListener('click', function(){
+  mode = "mixed";
+  document.querySelectorAll('.nav-btn').forEach(function(b){ b.classList.remove('active'); });
+  document.querySelector('.nav-btn[data-mode="mixed"]').classList.add('active');
+  activeFilterTag = null;
+  applyState();
+  var randomMesh = meshes[Math.floor(Math.random() * meshes.length)];
+  zoomToMesh(randomMesh);
+  openDetail(randomMesh.userData);
+});
+
+// ---------- Filter: pannello con i tag, filtra la vista corrente ----------
+var filterOverlay = document.getElementById('filterOverlay');
+var filterTagsEl = document.getElementById('filterTags');
+
+var allTagBtn = document.createElement('div');
+allTagBtn.className = 'fo-tag active';
+allTagBtn.textContent = 'Tutte';
+allTagBtn.addEventListener('click', function(){
+  activeFilterTag = null;
+  document.querySelectorAll('.fo-tag').forEach(function(t){ t.classList.remove('active'); });
+  allTagBtn.classList.add('active');
+  applyState();
+});
+filterTagsEl.appendChild(allTagBtn);
+
+WORDS.forEach(function(tag){
+  var el = document.createElement('div');
+  el.className = 'fo-tag';
+  el.textContent = tag;
+  el.addEventListener('click', function(){
+    activeFilterTag = tag;
+    document.querySelectorAll('.fo-tag').forEach(function(t){ t.classList.remove('active'); });
+    el.classList.add('active');
+    applyState();
+  });
+  filterTagsEl.appendChild(el);
+});
+
+document.getElementById('filterBtn').addEventListener('click', function(){
+  filterOverlay.classList.toggle('show');
+});
+
+// La X sul pannello filtro rimuove il filtro attivo (torna a "Tutte") e chiude il pannello
+document.getElementById('filterClose').addEventListener('click', function(){
+  activeFilterTag = null;
+  document.querySelectorAll('.fo-tag').forEach(function(t){ t.classList.remove('active'); });
+  allTagBtn.classList.add('active');
+  filterOverlay.classList.remove('show');
+  applyState();
+});
+
+// ---------- RENDER LOOP ----------
+function animate(){
+  requestAnimationFrame(animate);
+  updateCamera();
+  renderer.render(scene, camera);
+}
+animate();
+
+// ---------- CLICK → ZOOM NELLA SCENA + FINESTRA DI DETTAGLIO ----------
+var raycaster = new THREE.Raycaster();
+var mouseVec = new THREE.Vector2();
+
+// La camera vola verso l'elemento cliccato, rimanendo dentro la spirale/griglia
+// (non è un finto zoom nel pannello: è la scena 3D stessa che si avvicina).
+function zoomToMesh(mesh){
+  // se stiamo già "zoomati" su un elemento (click su un secondo elemento senza chiudere
+  // il pannello), non sovrascriviamo lo stato salvato: la chiusura deve sempre riportare
+  // alla vista larga originale, non a un punto intermedio.
+  if(!savedCam){
+    // salviamo sia lo stato orbitale (blend) sia quello di scorrimento (griglia): a seconda
+    // di quale modalità sarà attiva alla chiusura, restoreCamera userà quello giusto
+    savedCam = {
+      distance: targetDistance, rotX: targetRotX, rotY: targetRotY, focusY: targetFocusY,
+      panX: targetPanX, panY: targetPanY, panDistance: targetPanDistance
+    };
+  }
+  autoRotate = false;
+  focusMesh = mesh;
+  focusViewDistance = 6; // inquadratura di partenza ogni volta che si sceglie un nuovo elemento
+}
+
+function restoreCamera(){
+  focusMesh = null;
+  if(!savedCam) return;
+  targetDistance = savedCam.distance;
+  targetRotX = savedCam.rotX;
+  targetRotY = savedCam.rotY;
+  targetFocusY = savedCam.focusY;
+  targetPanX = savedCam.panX;
+  targetPanY = savedCam.panY;
+  targetPanDistance = savedCam.panDistance;
+  savedCam = null;
+}
+
+function tryClick(e){
+  // Mentre siamo in modalità dettaglio (un elemento a fuoco), qualunque clic nella scena —
+  // sul background o su un altro elemento della spirale/griglia — chiude semplicemente il
+  // dettaglio e torna alla vista precedente. Per scegliere un'altra immagine bisogna prima
+  // uscire dalla modalità di dettaglio (o usare i "Similar tags" nel pannello).
+  if(focusMesh){
+    if(detailOverlay.classList.contains('show')){ detailOverlay.classList.remove('show'); }
+    restoreCamera();
+    return;
+  }
+  mouseVec.x = (e.clientX/window.innerWidth)*2 - 1;
+  mouseVec.y = -(e.clientY/window.innerHeight)*2 + 1;
+  raycaster.setFromCamera(mouseVec, camera);
+  var hits = raycaster.intersectObjects(meshes);
+  if(hits.length){
+    zoomToMesh(hits[0].object);
+    openDetail(hits[0].object.userData);
+  } else if(detailOverlay.classList.contains('show')){
+    // clic a vuoto sulla scena mentre il pannello è aperto: chiude e torna alla vista precedente
+    detailOverlay.classList.remove('show');
+    restoreCamera();
+  }
+}
+
+var detailOverlay = document.getElementById('detailOverlay');
+var dCode = document.getElementById('dCode');
+var dTitle = document.getElementById('dTitle');
+var dMetaRows = document.getElementById('dMetaRows');
+var dConnGrid = document.getElementById('dConnGrid');
+var dDownload = document.getElementById('dDownload');
+
+function metaRow(label, value){
+  return '<div class="dp-meta-row"><span>'+label+'</span><span>'+value+'</span></div>';
+}
+
+// Clic su un "suggerimento" nel pannello (Similar tags): è l'UNICO modo (insieme all'uscita
+// dalla modalità dettaglio) per passare a un nuovo elemento mentre il dettaglio è aperto.
+// Sposta davvero la camera sul nuovo elemento e, se il nodo scelto non è visibile nella vista
+// corrente (tipo sbagliato per la modalità, o escluso dal filtro attivo), rimuove ciò che lo
+// nasconde (passa a "blend" e/o azzera il filtro) prima di raggiungerlo.
+function goToNode(node){
+  var typeOk = (mode === 'mixed') ||
+    (mode === 'images' && node.type === 'image') ||
+    (mode === 'words' && node.type === 'word');
+  var filterOk = !activeFilterTag ||
+    (node.type === 'image' ? node.tags.indexOf(activeFilterTag) !== -1 : node.label === activeFilterTag);
+
+  if(!typeOk || !filterOk){
+    if(!typeOk){
+      mode = 'mixed';
+      document.querySelectorAll('.nav-btn').forEach(function(b){ b.classList.toggle('active', b.dataset.mode === 'mixed'); });
+      hintText.textContent = HINT_MIXED;
+    }
+    if(!filterOk){
+      activeFilterTag = null;
+      document.querySelectorAll('.fo-tag').forEach(function(t){ t.classList.remove('active'); });
+      allTagBtn.classList.add('active');
+    }
+    applyState();
+  }
+  var m = meshById[node.id];
+  if(m){ zoomToMesh(m); }
+  openDetail(node);
+}
+
+function renderConnGrid(images, words){
+  dConnGrid.innerHTML = '';
+  images.forEach(function(imgNode){
+    var el = document.createElement('div');
+    el.className = 'dp-conn-img';
+    var img = document.createElement('img');
+    img.src = imgNode.archive ? imgNode.imageUrlSmall : imageVariantDataUrls[imgNode.variant];
+    el.appendChild(img);
+    el.addEventListener('click', function(){ goToNode(imgNode); });
+    dConnGrid.appendChild(el);
+  });
+  words.forEach(function(wordNode){
+    var el = document.createElement('div');
+    el.className = 'dp-conn-word';
+    el.textContent = wordNode.label;
+    el.addEventListener('click', function(){ goToNode(wordNode); });
+    dConnGrid.appendChild(el);
+  });
+}
+
+// Calcola le connessioni reali: per un'immagine, le altre immagini con più tag in comune
+// (non più una variante grafica finta), e le parole sono semplicemente i suoi tag.
+// Per una parola, le immagini collegate sono quelle che la portano come tag, e le altre
+// parole collegate sono quelle che compaiono più spesso insieme a questa nelle stesse immagini
+// (co-occorrenza) — un criterio di prossimità reale, sostituibile 1:1 con dati veri.
+function getConnections(node){
+  var allImages = NODES.filter(function(n){ return n.type === "image"; });
+  var allWords = NODES.filter(function(n){ return n.type === "word"; });
+  var relatedImages, relatedWords;
+
+  if(node.type === "image"){
+    relatedImages = allImages
+      .filter(function(n){ return n.id !== node.id; })
+      .map(function(n){
+        var shared = n.tags.filter(function(t){ return node.tags.indexOf(t) !== -1; }).length;
+        return { node:n, shared:shared };
+      })
+      .filter(function(o){ return o.shared > 0; })
+      .sort(function(a,b){ return b.shared - a.shared; })
+      .slice(0, 6)
+      .map(function(o){ return o.node; });
+
+    relatedWords = node.tags
+      .map(function(label){ return allWords.filter(function(w){ return w.label === label; })[0]; })
+      .filter(Boolean)
+      .slice(0, 4);
+  } else {
+    var label = node.label;
+    relatedImages = allImages.filter(function(n){ return n.tags.indexOf(label) !== -1; }).slice(0, 6);
+
+    var cooccur = {};
+    allImages.forEach(function(img){
+      if(img.tags.indexOf(label) === -1) return;
+      img.tags.forEach(function(t){
+        if(t === label) return;
+        cooccur[t] = (cooccur[t]||0) + 1;
+      });
+    });
+    relatedWords = Object.keys(cooccur)
+      .sort(function(a,b){ return cooccur[b]-cooccur[a]; })
+      .slice(0, 4)
+      .map(function(l){ return allWords.filter(function(w){ return w.label === l; })[0]; })
+      .filter(Boolean);
+  }
+  return { images: relatedImages, words: relatedWords };
+}
+
+var currentDetailNode = null; // ultimo elemento aperto nel pannello: serve alla lente per sapere cosa espandere
+
+// Titoli descrittivi generati (segnaposto): quando avrai i metadati reali dei volumi
+// Gulbenkian, questa funzione va sostituita con la lettura diretta del titolo catalogato.
+var TITLE_TEMPLATES = ["Study on {tag}", "Composition, {tag}", "Fragment — {tag}", "Untitled ({tag})", "Plate, {tag} series"];
+function generateTitle(node){
+  var t = TITLE_TEMPLATES[node.variant % TITLE_TEMPLATES.length];
+  var tag = node.tags[0].charAt(0).toUpperCase() + node.tags[0].slice(1);
+  return t.replace("{tag}", tag);
+}
+
+function openDetail(node){
+  currentDetailNode = node;
+  if(node.type === "image"){
+    var a = node.archive; // dati reali (database personale o Wikimedia Commons), se già arrivati
+
+    if(a){
+      dCode.textContent = a.id;
+      dTitle.textContent = a.title || generateTitle(node);
+      dMetaRows.innerHTML =
+        metaRow("Artist", a.artist || "Unknown") +
+        metaRow("Date", a.date || "—") +
+        metaRow("Medium", a.medium || "—") +
+        metaRow("Source", a.source || "—") +
+        metaRow("Tags", node.tags.join(", "));
+
+      dDownload.href = node.imageUrlLarge;
+      dDownload.download = a.id + ".jpg";
+      dDownload.target = "_blank";
+      dDownload.rel = "noopener";
+    } else {
+      var year = 1880 + ((node.variant * 7 + 13) % 140);
+      var title = generateTitle(node);
+
+      dCode.textContent = node.code;
+      dTitle.textContent = title;
+      dMetaRows.innerHTML =
+        metaRow("Year", year) +
+        metaRow("Location", "Arquivos Gulbenkian, Lisboa") +
+        metaRow("Volume", "Fundo " + node.tags[0] + ", cota " + node.code) +
+        metaRow("Tags", node.tags.join(", "));
+
+      dDownload.href = imageVariantDataUrls[node.variant];
+      dDownload.download = node.code + ".png";
+      dDownload.removeAttribute('target');
+      dDownload.removeAttribute('rel');
+    }
+    dDownload.classList.remove('hidden');
+    dMagnify.classList.remove('hidden');
+  } else {
+    dCode.textContent = "Word";
+    dTitle.textContent = node.label;
+    dMetaRows.innerHTML =
+      metaRow("Type", "Conceptual term") +
+      metaRow("Function", "Links nearby images by proximity");
+
+    dDownload.classList.add('hidden');
+    dMagnify.classList.add('hidden');
+  }
+
+  var conn = getConnections(node);
+  renderConnGrid(conn.images, conn.words.filter(Boolean));
+
+  detailOverlay.classList.add('show');
+}
+
+var dMagnify = document.getElementById('dMagnify');
+var lightbox = document.getElementById('lightbox');
+var lightboxImg = document.getElementById('lightboxImg');
+
+dMagnify.addEventListener('click', function(){
+  if(!currentDetailNode || currentDetailNode.type !== "image") return;
+  var a = currentDetailNode.archive;
+  lightboxImg.src = a ? currentDetailNode.imageUrlLarge : imageVariantDataUrls[currentDetailNode.variant];
+  lightboxImg.alt = a ? (a.title || currentDetailNode.code) : currentDetailNode.code;
+  lightboxImg.classList.toggle('is-real', !!a);
+  lightbox.classList.add('show');
+});
+document.getElementById('lightboxClose').addEventListener('click', function(){
+  lightbox.classList.remove('show');
+});
+lightbox.addEventListener('click', function(e){
+  if(e.target === lightbox){ lightbox.classList.remove('show'); }
+});
+
+document.getElementById('closeModal').addEventListener('click', function(){
+  detailOverlay.classList.remove('show');
+  restoreCamera();
+});
+detailOverlay.addEventListener('click', function(e){
+  if(e.target === detailOverlay){
+    detailOverlay.classList.remove('show');
+    restoreCamera();
+  }
+});
+
+// ---------- OVERLAY DI ISTRUZIONI INIZIALE ----------
+var onboarding = document.getElementById('onboarding');
+document.getElementById('onboardingOk').addEventListener('click', function(){
+  onboarding.classList.add('hide');
+});
+document.getElementById('helpBtn').addEventListener('click', function(){
+  onboarding.classList.remove('hide');
+});
+
+// ---------- LOGO "Iperuranio" → torna alla vista iniziale ----------
+// Clic sul titolo: chiude dettaglio e filtro, azzera il filtro attivo, torna in "blend"
+// e ripristina la camera. Un piccolo hover di ingrandimento (via CSS) segnala che è cliccabile.
+document.getElementById('logoTitle').addEventListener('click', function(){
+  if(detailOverlay.classList.contains('show')){ detailOverlay.classList.remove('show'); }
+  filterOverlay.classList.remove('show');
+  restoreCamera();
+
+  activeFilterTag = null;
+  document.querySelectorAll('.fo-tag').forEach(function(t){ t.classList.remove('active'); });
+  allTagBtn.classList.add('active');
+
+  mode = 'mixed';
+  document.querySelectorAll('.nav-btn').forEach(function(b){ b.classList.remove('active'); });
+  document.querySelector('.nav-btn[data-mode="mixed"]').classList.add('active');
+  hintText.textContent = HINT_MIXED;
+
+  applyState();
+});
+
+// ---------- RESIZE ----------
+window.addEventListener('resize', function(){
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+})();
+</script>
+</body>
+</html>
