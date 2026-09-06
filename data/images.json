@@ -1,1 +1,9 @@
-[]
+[
+    {
+    "title":  "Pianta verde",
+    "artist": "Vincent van Gogh",
+    "date":   "1889",
+    "medium": "Olio su tela",
+    "image":  "data/plant.jpg"
+  }
+]
