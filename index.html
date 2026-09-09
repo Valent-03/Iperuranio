@@ -25,7 +25,10 @@
     overflow:hidden;
   }
   #canvas-wrap{ position:absolute; inset:0; }
-  canvas{ display:block; }
+  /* touch-action:none lascia gestire interamente al nostro JS i gesti (trascinamento e
+     pizzico a due dita), invece di farli intercettare dal browser (che altrimenti farebbe
+     zoom sull'intera pagina invece che sulla scena 3D) */
+  canvas{ display:block; touch-action: none; }
 
   .hdr{
     position:absolute; top:0; left:0; right:0;
@@ -207,7 +210,7 @@
   }
   .onboarding.hide{ opacity:0; pointer-events:none; }
   .onboarding-card{
-    max-width: 420px; text-align:center; padding: 28px 34px;
+    max-width: min(620px, 88vw); text-align:center; padding: 28px 44px;
     border:1px solid var(--accent); border-radius:4px;
     background: rgba(0,0,0,0.92);
   }
@@ -216,7 +219,7 @@
     font-size: 20px; margin-bottom: 16px; color: var(--ink);
   }
   .onboarding-card .oc-list{
-    font-size: 11px; color: var(--ink-dim); line-height: 2.1; letter-spacing: 0.3px;
+    font-size: 11px; color: var(--ink-dim); line-height: 1.85; letter-spacing: 0.3px;
   }
   .onboarding-card .oc-list b{ color: var(--ink); font-weight: 600; }
   .onboarding-card .oc-hint{
@@ -250,6 +253,71 @@
     transition: background 0.2s ease;
   }
   .help-btn:hover{ background: rgba(52,255,224,0.12); }
+
+  /* ---------- Pagina informativa (clic sul logo "Iperuranio") ----------
+     Sfondo pieno + breve testo, ispirato a com'è organizzata l'accoglienza del sito
+     enclosure.cargo.site (senza l'animazione di sfondo, rimossa su richiesta). */
+  .info-overlay{
+    position:absolute; inset:0; z-index:80;
+    background:#000;
+    opacity:0; pointer-events:none;
+    transition: opacity 0.5s ease;
+    overflow-x:hidden; overflow-y:auto; /* se il testo dovesse mai risultare più alto dello schermo, scorre invece di essere tagliato */
+  }
+  .info-overlay.show{ opacity:1; pointer-events:auto; }
+  .info-content{
+    position:relative; z-index:2; min-height:100%;
+    display:flex; flex-direction:column; justify-content:center;
+    max-width: min(920px, 88vw); margin: 0 auto; padding: 40px 0;
+    pointer-events:none; /* per default non è cliccabile: si attiva solo quando l'overlay è visibile (vedi sotto) */
+  }
+  /* Attivo SOLO quando la pagina informativa è aperta: senza questa condizione la zona di
+     testo (per quanto invisibile a opacity:0) resterebbe cliccabile anche a pagina chiusa,
+     rubando i clic destinati agli elementi sottostanti. */
+  .info-overlay.show .info-content{
+    pointer-events:auto; /* il testo assorbe il clic: cliccarci sopra NON deve chiudere la pagina */
+  }
+  /* Stessa identica scritta "Iperuranio" del titolo in alto a sinistra (stesso font, stesso
+     contorno, stessa dimensione) — qui solo centrata invece che allineata a sinistra. */
+  .info-title-row{
+    display:flex; align-items:baseline; justify-content:center; gap:6px;
+    margin-bottom: 28px;
+  }
+  .info-title{
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    font-weight: 700;
+    font-size: clamp(34px, 4.8vw, 50px);
+    letter-spacing: 1px;
+    margin:0;
+    color: transparent;
+    -webkit-text-stroke: 1.4px var(--ink);
+    text-stroke: 1.4px var(--ink);
+  }
+  .info-title-ring{
+    width:13px; height:13px;
+    border:1.8px solid var(--accent);
+    border-radius:50%;
+    box-shadow: 0 0 0 1.5px var(--ink);
+    transform: translateY(-20px);
+  }
+  .info-body p{
+    font-family: var(--serif); font-style:italic; font-weight:300;
+    font-size: clamp(12px, 1.1vw, 16px); line-height:1.7;
+    color: var(--ink); margin: 0 0 22px 0;
+    text-shadow: 0 2px 18px rgba(0,0,0,0.8);
+  }
+  .info-close{
+    position:absolute; top:26px; right:32px; z-index:3;
+    width:34px; height:34px; border-radius:50%;
+    background: rgba(0,0,0,0.5); border:1px solid var(--line);
+    color: var(--ink); font-size:16px; cursor:pointer; line-height:1;
+    transition: border-color 0.2s ease, color 0.2s ease;
+  }
+  .info-close:hover{ border-color: var(--accent); color: var(--accent); }
+  @media (max-width: 640px){
+    .info-content{ padding: 28px 24px; }
+    .info-close{ top:16px; right:16px; }
+  }
 
   /* Pannello filtro per tag */
   .filter-overlay{
@@ -286,6 +354,35 @@
   }
   .fo-tag:hover{ border-color: var(--accent); color: var(--ink); }
   .fo-tag.active{ border-color: var(--accent); color: var(--ink); background: rgba(52,255,224,0.12); }
+
+  /* ---------- Schermi stretti (telefoni) ---------- */
+  @media (max-width: 640px){
+    .hdr{ padding: 16px 0 0 16px; }
+    .hdr h1{ font-size: clamp(22px, 7.5vw, 30px); }
+    .info-title{ font-size: clamp(22px, 7.5vw, 30px); }
+    .hdr .title-row{ pointer-events:auto; }
+    /* Sotto ai 640px il menu non ci sta più su una riga: invece di andare a capo
+       (che spinge giù il resto o si sovrappone) diventa una fila che scorre in
+       orizzontale — si scorre con un dito, resta sempre leggibile su una riga sola. */
+    .nav{
+      top: auto; bottom: 14px; left: 0; right: 0;
+      justify-content: flex-start;
+      gap: 22px;
+      padding: 0 16px 6px 16px;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent);
+    }
+    .nav::-webkit-scrollbar{ display:none; }
+    .nav button{ font-size: 13px; white-space: nowrap; flex: none; }
+    .detail-overlay{ top: 84px; right: 12px; bottom: 62px; width: min(300px, 92vw); }
+    .detail-panel{ padding: 16px 16px 20px 16px; }
+    .hint{ display:none; } /* il menu ora occupa la fascia bassa: il suggerimento in più affollerebbe lo schermo */
+    /* Il tasto "?" per default sta in basso a destra (bottom:20px) — proprio dove ora c'è
+       il menu scorrevole. Lo spostiamo in alto a destra, libero da tutto il resto. */
+    .help-btn{ top: 16px; bottom: auto; right: 16px; }
+  }
 </style>
 </head>
 <body>
@@ -348,6 +445,26 @@
 <div class="lightbox" id="lightbox">
   <button class="close-btn" id="lightboxClose">&times;</button>
   <img id="lightboxImg" src="" alt="">
+</div>
+
+<div class="info-overlay" id="infoOverlay">
+  <button class="info-close" id="infoClose" title="Chiudi">&times;</button>
+  <div class="info-content">
+    <div class="info-title-row">
+      <div class="info-title">Iperuranio</div>
+      <div class="info-title-ring"></div>
+    </div>
+    <!-- ======================================================================
+         TESTO DELLA PAGINA INFORMATIVA — modifica pure liberamente qui sotto.
+         Ogni riga <p>...</p> è un paragrafo; aggiungine o toglline quante vuoi.
+         ====================================================================== -->
+    <div class="info-body">
+      <p>L'Iperuranio &egrave;, per Platone, il luogo oltre il cielo: dove risiedono le Idee pure, le forme perfette di cui ogni cosa nel mondo sensibile &egrave; soltanto un'ombra, un riflesso imperfetto.</p>
+      <p>Questo sito &egrave; un tentativo di attraversarlo: una spirale di immagini e parole raccolte da musei e archivi di tutto il mondo, sospese in uno spazio che non ha n&eacute; inizio n&eacute; fine.</p>
+      <p>Non c'&egrave; un ordine da seguire. Ruota, avvicinati, allontanati &mdash; e lascia che le forme si rivelino una alla volta, come accade quando si esce dalla caverna.</p>
+    </div>
+    <!-- FINE TESTO PAGINA INFORMATIVA -->
+  </div>
 </div>
 
 <div class="hint" id="hintText">Drag to rotate · Shift+Drag to move vertically · Scroll to zoom · Click an element</div>
@@ -484,10 +601,51 @@ var GRID_DEFAULT_DISTANCE = 15, GRID_MIN_DISTANCE = 6, GRID_MAX_DISTANCE = 42;
 var panDistance = GRID_DEFAULT_DISTANCE, targetPanDistance = GRID_DEFAULT_DISTANCE;
 var gridPanBoundX = 30, gridPanBoundY = 30; // limiti di scorrimento, ricalcolati in base al contenuto
 
+// Stato del pizzico a due dita (touch): teniamo traccia di ogni dito attivo per id, così
+// possiamo distinguere "un dito che trascina" da "due dita che si avvicinano/allontanano".
+// I Pointer Event usati qui sotto funzionano già sia con mouse che con touch di base
+// (trascinamento con un dito), quindi serve aggiungere solo la logica per il secondo dito.
+var activePointers = {};
+var isPinching = false, hadPinch = false;
+var lastPinchDistance = 0;
+var PINCH_SENSITIVITY = 3.2; // quanto "pesa" un pixel di avvicinamento/allontanamento delle dita
+
+function getActivePointerIds(){ return Object.keys(activePointers); }
+function getPinchDistance(){
+  var ids = getActivePointerIds();
+  if(ids.length < 2) return 0;
+  var a = activePointers[ids[0]], b = activePointers[ids[1]];
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+// Stessa identica logica di zoom usata dalla rotella del mouse (sotto), riusata anche dal
+// pizzico: un solo posto dove vivono i limiti min/max per ciascuna modalità.
+function applyZoomDelta(deltaY){
+  if(focusMesh){
+    focusViewDistance += deltaY * 0.008;
+    focusViewDistance = Math.max(1.1, Math.min(20, focusViewDistance));
+  } else if(mode === 'mixed'){
+    targetDistance += deltaY * 0.02;
+    targetDistance = Math.max(8, Math.min(90, targetDistance));
+  } else {
+    targetPanDistance += deltaY * 0.02;
+    targetPanDistance = Math.max(GRID_MIN_DISTANCE, Math.min(GRID_MAX_DISTANCE, targetPanDistance));
+  }
+}
+
 renderer.domElement.addEventListener('contextmenu', function(e){ e.preventDefault(); });
 
 renderer.domElement.addEventListener('pointerdown', function(e){
   autoRotate = false;
+  activePointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+
+  if(getActivePointerIds().length >= 2){
+    // secondo dito appoggiato: passiamo alla modalità pizzico e sospendiamo il trascinamento
+    isDragging = false; isPanning = false;
+    isPinching = true; hadPinch = true;
+    lastPinchDistance = getPinchDistance();
+    return;
+  }
+
   lastX = e.clientX; lastY = e.clientY;
   downX = e.clientX; downY = e.clientY;
   downButton = e.button;
@@ -501,12 +659,49 @@ renderer.domElement.addEventListener('pointerdown', function(e){
     isDragging = true;
   }
 });
-window.addEventListener('pointerup', function(e){
+function onPointerLift(e){
+  delete activePointers[e.pointerId];
+  var remaining = getActivePointerIds();
+
+  if(remaining.length >= 2){
+    // resta comunque un pizzico in corso con altre due dita: ricalcoliamo il riferimento
+    lastPinchDistance = getPinchDistance();
+    return;
+  }
+  isPinching = false; lastPinchDistance = 0;
+
+  if(remaining.length === 1){
+    // è rimasto un dito solo: riprendiamo il trascinamento da qui, senza scatti improvvisi
+    var p = activePointers[remaining[0]];
+    lastX = p.x; lastY = p.y;
+    if(!focusMesh){ isDragging = true; }
+    return;
+  }
+
+  // nessun dito rimasto: se non c'è stato un pizzico nel frattempo, valutiamo se era un tap/click
   var dist = Math.hypot(e.clientX - downX, e.clientY - downY);
-  if(dist < 6 && downButton !== 2){ tryClick(e); }
-  isDragging = false; isPanning = false;
-});
+  if(dist < 6 && downButton !== 2 && !hadPinch){ tryClick(e); }
+  isDragging = false; isPanning = false; hadPinch = false;
+}
+window.addEventListener('pointerup', onPointerLift);
+window.addEventListener('pointercancel', onPointerLift); // il sistema operativo può "rubare" il gesto (es. swipe dai bordi su iOS)
 window.addEventListener('pointermove', function(e){
+  if(activePointers[e.pointerId]){
+    activePointers[e.pointerId].x = e.clientX;
+    activePointers[e.pointerId].y = e.clientY;
+  }
+
+  if(isPinching && getActivePointerIds().length >= 2){
+    var dist = getPinchDistance();
+    if(lastPinchDistance > 0){
+      // le dita si avvicinano (dist più piccola di prima) → vogliamo allontanarci (zoom out),
+      // stesso segno usato dalla rotella quando si scorre "in giù"
+      applyZoomDelta((lastPinchDistance - dist) * PINCH_SENSITIVITY);
+    }
+    lastPinchDistance = dist;
+    return;
+  }
+
   if(!isDragging && !isPanning) return;
   var dx = e.clientX - lastX, dy = e.clientY - lastY;
   lastX = e.clientX; lastY = e.clientY;
@@ -531,17 +726,7 @@ window.addEventListener('pointermove', function(e){
 });
 renderer.domElement.addEventListener('wheel', function(e){
   e.preventDefault();
-  if(focusMesh){
-    // zoom ulteriore sull'elemento a cui siamo agganciati
-    focusViewDistance += e.deltaY * 0.008;
-    focusViewDistance = Math.max(1.1, Math.min(20, focusViewDistance));
-  } else if(mode === 'mixed'){
-    targetDistance += e.deltaY * 0.02;
-    targetDistance = Math.max(8, Math.min(90, targetDistance));
-  } else {
-    targetPanDistance += e.deltaY * 0.02;
-    targetPanDistance = Math.max(GRID_MIN_DISTANCE, Math.min(GRID_MAX_DISTANCE, targetPanDistance));
-  }
+  applyZoomDelta(e.deltaY);
 }, {passive:false});
 
 // Alternativa da tastiera per chi non ha un tasto destro/trackpad comodo da usare in trascinamento
@@ -1343,9 +1528,32 @@ document.getElementById('helpBtn').addEventListener('click', function(){
   onboarding.classList.remove('hide');
 });
 
-// ---------- LOGO "Iperuranio" → torna alla vista iniziale ----------
-// Clic sul titolo: chiude dettaglio e filtro, azzera il filtro attivo, torna in "blend"
-// e ripristina la camera. Un piccolo hover di ingrandimento (via CSS) segnala che è cliccabile.
+// ---------- PAGINA INFORMATIVA (clic sul logo) ----------
+// Un semplice overlay a schermo pieno con il testo di presentazione, senza sfondo animato.
+var infoOverlay = document.getElementById('infoOverlay');
+
+function openInfoOverlay(){
+  infoOverlay.classList.add('show');
+}
+
+function closeInfoOverlay(){
+  infoOverlay.classList.remove('show');
+}
+
+document.getElementById('infoClose').addEventListener('click', closeInfoOverlay);
+infoOverlay.addEventListener('click', function(e){
+  // chiude quando il clic arriva direttamente sullo sfondo dell'overlay,
+  // ma non quando arriva sul testo/contenuto in primo piano
+  if(e.target === infoOverlay){ closeInfoOverlay(); }
+});
+document.addEventListener('keydown', function(e){
+  if(e.key === 'Escape' && infoOverlay.classList.contains('show')){ closeInfoOverlay(); }
+});
+
+// ---------- LOGO "Iperuranio" → torna alla vista iniziale + apre la pagina informativa ----------
+// Clic sul titolo: chiude dettaglio e filtro, azzera il filtro attivo, torna in "blend",
+// ripristina la camera (comportamento originale) e in più apre la pagina informativa.
+// Un piccolo hover di ingrandimento (via CSS) segnala che è cliccabile.
 document.getElementById('logoTitle').addEventListener('click', function(){
   if(detailOverlay.classList.contains('show')){ detailOverlay.classList.remove('show'); }
   filterOverlay.classList.remove('show');
@@ -1361,6 +1569,8 @@ document.getElementById('logoTitle').addEventListener('click', function(){
   hintText.textContent = HINT_MIXED;
 
   applyState();
+
+  openInfoOverlay();
 });
 
 // ---------- RESIZE ----------
